@@ -48,9 +48,9 @@ impl StringUtils for String {
     }
 }
 
-impl Into<Option<Ident>> for TypeEnum {
-    fn into(self) -> Option<Ident> {
-        match self {
+impl From<TypeEnum> for Option<Ident> {
+    fn from(val: TypeEnum) -> Self {
+        match val {
             TypeEnum::Boolean => Some(Ident::new("bool", Span::call_site())),
             TypeEnum::Integer => Some(Ident::new("JsUInt", Span::call_site())),
             TypeEnum::Number => Some(Ident::new("JsFloat", Span::call_site())),
@@ -78,7 +78,7 @@ fn add_dependency(dependencies: &mut Vec<TokenStream>, dependency: &Ident) {
     }
 }
 
-fn tokenize_enum(enum_vec: &Vec<String>, enum_name: String) -> (Ident, TokenStream) {
+fn tokenize_enum(enum_vec: &[String], enum_name: String) -> (Ident, TokenStream) {
     let enum_tokens: Vec<TokenStream> = enum_vec
         .iter()
         .map(|e| {
@@ -171,11 +171,9 @@ fn get_types(
             // || param.name.starts_with("type")
             let param_name = &param.name;
             let name = Ident::new(
-                &String::from(
-                    param_name
+                &param_name
                         .to_case(Case::Snake)
                         .replace_if("type", "Type", || param.name.starts_with("type")),
-                ),
                 Span::call_site(),
             );
 
@@ -185,7 +183,7 @@ fn get_types(
 
                     if let Some(p_ref) = &items.items_ref {
                         if let Some(p_type) = previous_type {
-                            if let Some(_) = param.optional {
+                            if param.optional.is_some() {
                                 let v = quote! {
                                     #[serde(skip_serializing_if="Option::is_none")]
                                     #[serde(rename = #param_name)]
@@ -214,7 +212,7 @@ fn get_types(
                                     })
                                     .collect();
 
-                                if v.len() <= 0 {
+                                if v.is_empty() {
                                     dependencies.push(quote! {
                                         use super::#dep;
                                     });
@@ -226,7 +224,7 @@ fn get_types(
                                 .map(|v| Ident::new(v, Span::call_site()))
                                 .collect::<Vec<Ident>>();
 
-                            if let Some(_) = param.optional {
+                            if param.optional.is_some() {
                                 let v = quote! {
                                     #[serde(skip_serializing_if="Option::is_none")]
                                     #[serde(rename = #param_name)]
@@ -242,7 +240,7 @@ fn get_types(
                             }
                         }
                     } else {
-                        let p_type = items.items_type.as_ref().unwrap().clone();
+                        let p_type = *items.items_type.as_ref().unwrap();
 
                         get_types(
                             p_type,
@@ -267,7 +265,7 @@ fn get_types(
                         );
 
                         if let Some(p_type) = previous_type {
-                            if let Some(_) = param.optional {
+                            if param.optional.is_some() {
                                 let v = quote! {
                                     #[serde(skip_serializing_if="Option::is_none")]
                                     #[serde(rename = #param_name)]
@@ -281,59 +279,53 @@ fn get_types(
                                 };
                                 object.push(v);
                             }
+                        } else if param.optional.is_some() {
+                            let v = quote! {
+                                #[serde(skip_serializing_if="Option::is_none")]
+                                #[serde(rename = #param_name)]
+                                pub #name: Option<#enum_name>,
+                            };
+                            object.push(v);
                         } else {
-                            if let Some(_) = param.optional {
-                                let v = quote! {
-                                    #[serde(skip_serializing_if="Option::is_none")]
-                                    #[serde(rename = #param_name)]
-                                    pub #name: Option<#enum_name>,
-                                };
-                                object.push(v);
-                            } else {
-                                let v = quote! {
-                                    #[serde(rename = #param_name)]
-                                    pub #name: #enum_name,
-                                };
-                                object.push(v);
-                            }
+                            let v = quote! {
+                                #[serde(rename = #param_name)]
+                                pub #name: #enum_name,
+                            };
+                            object.push(v);
                         }
                         enums.push(typ_enum);
-                    } else {
-                        if let Some(p_type) = previous_type {
-                            if let Some(_) = param.optional {
-                                let v = quote! {
-                                    #[serde(skip_serializing_if="Option::is_none")]
-                                    #[serde(default)]
-                                    #[serde(rename = #param_name)]
-                                    pub #name: Option<#p_type<String>>,
-                                };
-                                object.push(v);
-                            } else {
-                                let v = quote! {
-                                    #[serde(default)]
-                                    #[serde(rename = #param_name)]
-                                    pub #name: #p_type<String>,
-                                };
-                                object.push(v);
-                            }
+                    } else if let Some(p_type) = previous_type {
+                        if param.optional.is_some() {
+                            let v = quote! {
+                                #[serde(skip_serializing_if="Option::is_none")]
+                                #[serde(default)]
+                                #[serde(rename = #param_name)]
+                                pub #name: Option<#p_type<String>>,
+                            };
+                            object.push(v);
                         } else {
-                            if let Some(_) = param.optional {
-                                let v = quote! {
-                                    #[serde(skip_serializing_if="Option::is_none")]
-                                    #[serde(default)]
-                                    #[serde(rename = #param_name)]
-                                    pub #name: Option<String>,
-                                };
-                                object.push(v);
-                            } else {
-                                let v = quote! {
-                                    #[serde(default)]
-                                    #[serde(rename = #param_name)]
-                                    pub #name: String,
-                                };
-                                object.push(v);
-                            }
+                            let v = quote! {
+                                #[serde(default)]
+                                #[serde(rename = #param_name)]
+                                pub #name: #p_type<String>,
+                            };
+                            object.push(v);
                         }
+                    } else if param.optional.is_some() {
+                        let v = quote! {
+                            #[serde(skip_serializing_if="Option::is_none")]
+                            #[serde(default)]
+                            #[serde(rename = #param_name)]
+                            pub #name: Option<String>,
+                        };
+                        object.push(v);
+                    } else {
+                        let v = quote! {
+                            #[serde(default)]
+                            #[serde(rename = #param_name)]
+                            pub #name: String,
+                        };
+                        object.push(v);
                     }
                 }
                 _ => {
@@ -341,7 +333,7 @@ fn get_types(
 
                     if let Some(typ) = type_type {
                         if let Some(p_type) = previous_type {
-                            if let Some(_) = param.optional {
+                            if param.optional.is_some() {
                                 let v = quote! {
                                     #[serde(skip_serializing_if="Option::is_none")]
                                     #[serde(default)]
@@ -357,23 +349,21 @@ fn get_types(
                                 };
                                 object.push(v);
                             }
+                        } else if param.optional.is_some() {
+                            let v = quote! {
+                                #[serde(skip_serializing_if="Option::is_none")]
+                                #[serde(default)]
+                                #[serde(rename = #param_name)]
+                                pub #name: Option<#typ>,
+                            };
+                            object.push(v);
                         } else {
-                            if let Some(_) = param.optional {
-                                let v = quote! {
-                                    #[serde(skip_serializing_if="Option::is_none")]
-                                    #[serde(default)]
-                                    #[serde(rename = #param_name)]
-                                    pub #name: Option<#typ>,
-                                };
-                                object.push(v);
-                            } else {
-                                let v = quote! {
-                                    #[serde(default)]
-                                    #[serde(rename = #param_name)]
-                                    pub #name: #typ,
-                                };
-                                object.push(v);
-                            }
+                            let v = quote! {
+                                #[serde(default)]
+                                #[serde(rename = #param_name)]
+                                pub #name: #typ,
+                            };
+                            object.push(v);
                         }
                     }
                 }
@@ -388,13 +378,13 @@ fn get_types(
                     let items = typ_element.items.as_ref().unwrap();
 
                     if let Some(p_ref) = &items.items_ref {
-                        let p_ref = Ident::new(&p_ref, Span::call_site());
+                        let p_ref = Ident::new(p_ref, Span::call_site());
                         let v = quote! {
                             pub type #name = Vec<#p_ref>;
                         };
                         types.push(v);
                     } else {
-                        let p_type = items.items_type.as_ref().unwrap().clone();
+                        let p_type = *items.items_type.as_ref().unwrap();
 
                         get_types(
                             p_type,
@@ -414,7 +404,7 @@ fn get_types(
                         for property in properties {
                             match &property.parameter_type {
                                 Some(p) => get_types(
-                                    p.clone(),
+                                    *p,
                                     PropertyType::Param(property),
                                     Some(typ_element),
                                     types,
@@ -447,7 +437,7 @@ fn get_types(
                                             })
                                             .collect();
 
-                                        if v.len() <= 0 {
+                                        if v.is_empty() {
                                             dependencies.push(quote! {
                                                 use super::#dep;
                                             });
@@ -456,7 +446,7 @@ fn get_types(
 
                                     if p_ref == typ_element.id {
                                         let p_ref = Ident::new(&p_ref, Span::call_site());
-                                        if let Some(_) = property.optional {
+                                        if property.optional.is_some() {
                                             let v = quote! {
                                                 #[serde(skip_serializing_if="Option::is_none")]
                                                 #[serde(rename = #property_name)]
@@ -476,7 +466,7 @@ fn get_types(
                                             .map(|v| Ident::new(v, Span::call_site()))
                                             .collect::<Vec<Ident>>();
 
-                                        if let Some(_) = property.optional {
+                                        if property.optional.is_some() {
                                             let v = quote! {
                                                 #[serde(skip_serializing_if="Option::is_none")]
                                                 #[serde(rename = #property_name)]
@@ -495,7 +485,7 @@ fn get_types(
                             };
                         }
                     }
-                    if object.len() > 0 {
+                    if !object.is_empty() {
                         objects.push(quote! {
                                 #[derive(Deserialize,Serialize, Debug,Clone,PartialEq)]
                                 // #[serde(rename_all = "camelCase")]
@@ -515,20 +505,18 @@ fn get_types(
                     if let Some(enum_vec) = typ_element.type_enum.clone() {
                         let (_, typ_enum) = tokenize_enum(&enum_vec, name.to_string());
                         enums.push(typ_enum);
+                    } else if let Some(p_type) = previous_type {
+                        let v = quote! {
+                            pub type #name = #p_type<String>;
+                        };
+
+                        types.push(v);
                     } else {
-                        if let Some(p_type) = previous_type {
-                            let v = quote! {
-                                pub type #name = #p_type<String>;
-                            };
+                        let v = quote! {
+                            pub type #name = String;
+                        };
 
-                            types.push(v);
-                        } else {
-                            let v = quote! {
-                                pub type #name = String;
-                            };
-
-                            types.push(v);
-                        }
+                        types.push(v);
                     }
                 }
                 _ => {
@@ -588,7 +576,7 @@ pub fn get_commands(
                                         .collect::<Vec<Ident>>();
 
                                     add_dependency(dependencies, &dep[0]);
-                                    if let Some(_) = return_type.optional {
+                                    if return_type.optional.is_some() {
                                         let v = quote! {
                                             #[serde(skip_serializing_if="Option::is_none")]
                                             #[serde(rename = #ret_type_name)]
@@ -607,7 +595,7 @@ pub fn get_commands(
                                 } else {
                                     let ref_type = Ident::new(&ref_type, Span::call_site());
 
-                                    if let Some(_) = return_type.optional {
+                                    if return_type.optional.is_some() {
                                         let v = quote! {
                                             #[serde(skip_serializing_if="Option::is_none")]
                                             #[serde(rename = #ret_type_name)]
@@ -626,7 +614,7 @@ pub fn get_commands(
                                 let type_type: Option<Ident> = items.items_type.unwrap().into();
 
                                 if let Some(typ) = type_type {
-                                    if let Some(_) = return_type.optional {
+                                    if return_type.optional.is_some() {
                                         let v = quote! {
                                             #[serde(skip_serializing_if="Option::is_none")]
                                             #[serde(rename = #ret_type_name)]
@@ -653,7 +641,7 @@ pub fn get_commands(
                                 );
                                 enums.push(typ_enum);
 
-                                if let Some(_) = return_type.optional {
+                                if return_type.optional.is_some() {
                                     let v = quote! {
                                         #[serde(skip_serializing_if="Option::is_none")]
                                         #[serde(rename = #ret_type_name)]
@@ -667,32 +655,30 @@ pub fn get_commands(
                                     };
                                     command_object.push(v);
                                 }
+                            } else if return_type.optional.is_some() {
+                                let v = quote! {
+                                    #[serde(skip_serializing_if="Option::is_none")]
+                                    #[serde(default)]
+                                    #[serde(rename = #ret_type_name)]
+                                    pub #name: Option<String>,
+                                };
+
+                                command_object.push(v);
                             } else {
-                                if let Some(_) = return_type.optional {
-                                    let v = quote! {
-                                        #[serde(skip_serializing_if="Option::is_none")]
-                                        #[serde(default)]
-                                        #[serde(rename = #ret_type_name)]
-                                        pub #name: Option<String>,
-                                    };
+                                let v = quote! {
+                                    #[serde(default)]
+                                    #[serde(rename = #ret_type_name)]
+                                    pub #name: String,
+                                };
 
-                                    command_object.push(v);
-                                } else {
-                                    let v = quote! {
-                                        #[serde(default)]
-                                        #[serde(rename = #ret_type_name)]
-                                        pub #name: String,
-                                    };
-
-                                    command_object.push(v);
-                                }
+                                command_object.push(v);
                             }
                         }
                         _ => {
                             let type_type: Option<Ident> = param_type.into();
 
                             if let Some(typ) = type_type {
-                                if let Some(_) = return_type.optional {
+                                if return_type.optional.is_some() {
                                     let v = quote! {
                                         #[serde(skip_serializing_if="Option::is_none")]
                                         #[serde(default)]
@@ -727,7 +713,7 @@ pub fn get_commands(
                             .map(|v| Ident::new(v, Span::call_site()))
                             .collect::<Vec<Ident>>();
 
-                        if let Some(_) = return_type.optional {
+                        if return_type.optional.is_some() {
                             let v = quote! {
                                 #[serde(skip_serializing_if="Option::is_none")]
                                 #[serde(rename = #ret_type_name)]
@@ -742,9 +728,9 @@ pub fn get_commands(
                             command_object.push(v);
                         }
                     } else {
-                        let p_ref = Ident::new(&p_ref, Span::call_site());
+                        let p_ref = Ident::new(p_ref, Span::call_site());
 
-                        if let Some(_) = return_type.optional {
+                        if return_type.optional.is_some() {
                             let v = quote! {
                                 #[serde(skip_serializing_if="Option::is_none")]
                                 #[serde(rename = #ret_type_name)]
@@ -818,7 +804,7 @@ pub fn get_parameters(
 
                                 add_dependency(dependencies, &dep[0]);
 
-                                if let Some(_) = parameter.optional {
+                                if parameter.optional.is_some() {
                                     let v = quote! {
                                         #[serde(skip_serializing_if="Option::is_none")]
                                         #[serde(rename = #parameter_name)]
@@ -835,7 +821,7 @@ pub fn get_parameters(
                             } else {
                                 let ref_type = Ident::new(&ref_type, Span::call_site());
 
-                                if let Some(_) = parameter.optional {
+                                if parameter.optional.is_some() {
                                     let v = quote! {
                                         #[serde(skip_serializing_if="Option::is_none")]
                                         #[serde(rename = #parameter_name)]
@@ -854,7 +840,7 @@ pub fn get_parameters(
                             let type_type: Option<Ident> = items.items_type.unwrap().into();
 
                             if let Some(typ) = type_type {
-                                if let Some(_) = parameter.optional {
+                                if parameter.optional.is_some() {
                                     let v = quote! {
                                         #[serde(skip_serializing_if="Option::is_none")]
                                         #[serde(default)]
@@ -885,7 +871,7 @@ pub fn get_parameters(
                             );
                             enums.push(typ_enum);
 
-                            if let Some(_) = parameter.optional {
+                            if parameter.optional.is_some() {
                                 let v = quote! {
                                     #[serde(skip_serializing_if="Option::is_none")]
                                     #[serde(rename = #parameter_name)]
@@ -899,32 +885,30 @@ pub fn get_parameters(
                                 };
                                 parameter_object.push(v);
                             }
+                        } else if parameter.optional.is_some() {
+                            let v = quote! {
+                                #[serde(skip_serializing_if="Option::is_none")]
+                                #[serde(default)]
+                                #[serde(rename = #parameter_name)]
+                                pub #p_name: Option<String>,
+                            };
+
+                            parameter_object.push(v);
                         } else {
-                            if let Some(_) = parameter.optional {
-                                let v = quote! {
-                                    #[serde(skip_serializing_if="Option::is_none")]
-                                    #[serde(default)]
-                                    #[serde(rename = #parameter_name)]
-                                    pub #p_name: Option<String>,
-                                };
+                            let v = quote! {
+                                #[serde(default)]
+                                #[serde(rename = #parameter_name)]
+                                pub #p_name: String,
+                            };
 
-                                parameter_object.push(v);
-                            } else {
-                                let v = quote! {
-                                    #[serde(default)]
-                                    #[serde(rename = #parameter_name)]
-                                    pub #p_name: String,
-                                };
-
-                                parameter_object.push(v);
-                            }
+                            parameter_object.push(v);
                         }
                     }
                     _ => {
                         let type_type: Option<Ident> = param_type.into();
 
                         if let Some(typ) = type_type {
-                            if let Some(_) = parameter.optional {
+                            if parameter.optional.is_some() {
                                 let v = quote! {
                                     #[serde(skip_serializing_if="Option::is_none")]
                                     #[serde(default)]
@@ -969,14 +953,14 @@ pub fn get_parameters(
                         })
                         .collect();
 
-                    if v.len() <= 0 {
+                    if v.is_empty() {
                         let first_dep = &dep[0];
                         dependencies.push(quote! {
                             use super::#first_dep;
                         });
                     }
 
-                    if let Some(_) = parameter.optional {
+                    if parameter.optional.is_some() {
                         let v = quote! {
                             #[serde(skip_serializing_if="Option::is_none")]
                             #[serde(rename = #parameter_name)]
@@ -991,9 +975,9 @@ pub fn get_parameters(
                         parameter_object.push(v);
                     }
                 } else {
-                    let p_ref = Ident::new(&p_ref, Span::call_site());
+                    let p_ref = Ident::new(p_ref, Span::call_site());
 
-                    if let Some(_) = parameter.optional {
+                    if parameter.optional.is_some() {
                         let v = quote! {
                             #[serde(skip_serializing_if="Option::is_none")]
                             #[serde(rename = #parameter_name)]
@@ -1061,7 +1045,7 @@ pub fn get_events(
                                     .map(|v| Ident::new(v, Span::call_site()))
                                     .collect::<Vec<Ident>>();
 
-                                if let Some(_) = parameter.optional {
+                                if parameter.optional.is_some() {
                                     let v = quote! {
                                         #[serde(skip_serializing_if="Option::is_none")]
                                         #[serde(rename = #parameter_name)]
@@ -1078,7 +1062,7 @@ pub fn get_events(
                             } else {
                                 let ref_type = Ident::new(&ref_type, Span::call_site());
 
-                                if let Some(_) = parameter.optional {
+                                if parameter.optional.is_some() {
                                     let v = quote! {
                                         #[serde(skip_serializing_if="Option::is_none")]
                                         #[serde(rename = #parameter_name)]
@@ -1097,7 +1081,7 @@ pub fn get_events(
                             let type_type: Option<Ident> = items.items_type.unwrap().into();
 
                             if let Some(typ) = type_type {
-                                if let Some(_) = parameter.optional {
+                                if parameter.optional.is_some() {
                                     let v = quote! {
                                         #[serde(skip_serializing_if="Option::is_none")]
                                         #[serde(default)]
@@ -1128,7 +1112,7 @@ pub fn get_events(
                             );
                             enums.push(typ_enum);
 
-                            if let Some(_) = parameter.optional {
+                            if parameter.optional.is_some() {
                                 let v = quote! {
                                     #[serde(skip_serializing_if="Option::is_none")]
                                     #[serde(rename = #parameter_name)]
@@ -1142,32 +1126,30 @@ pub fn get_events(
                                 };
                                 event_object.push(v);
                             }
+                        } else if parameter.optional.is_some() {
+                            let v = quote! {
+                                #[serde(skip_serializing_if="Option::is_none")]
+                                #[serde(default)]
+                                #[serde(rename = #parameter_name)]
+                                pub #p_name: Option<String>,
+                            };
+
+                            event_object.push(v);
                         } else {
-                            if let Some(_) = parameter.optional {
-                                let v = quote! {
-                                    #[serde(skip_serializing_if="Option::is_none")]
-                                    #[serde(default)]
-                                    #[serde(rename = #parameter_name)]
-                                    pub #p_name: Option<String>,
-                                };
+                            let v = quote! {
+                                #[serde(default)]
+                                #[serde(rename = #parameter_name)]
+                                pub #p_name: String,
+                            };
 
-                                event_object.push(v);
-                            } else {
-                                let v = quote! {
-                                    #[serde(default)]
-                                    #[serde(rename = #parameter_name)]
-                                    pub #p_name: String,
-                                };
-
-                                event_object.push(v);
-                            }
+                            event_object.push(v);
                         }
                     }
                     _ => {
                         let type_type: Option<Ident> = param_type.into();
 
                         if let Some(typ) = type_type {
-                            if let Some(_) = parameter.optional {
+                            if parameter.optional.is_some() {
                                 let v = quote! {
                                     #[serde(skip_serializing_if="Option::is_none")]
                                     #[serde(default)]
@@ -1204,7 +1186,7 @@ pub fn get_events(
                         .map(|v| Ident::new(v, Span::call_site()))
                         .collect::<Vec<Ident>>();
 
-                    if let Some(_) = parameter.optional {
+                    if parameter.optional.is_some() {
                         let v = quote! {
                             #[serde(skip_serializing_if="Option::is_none")]
                             #[serde(rename = #parameter_name)]
@@ -1219,9 +1201,9 @@ pub fn get_events(
                         event_object.push(v);
                     }
                 } else {
-                    let p_ref = Ident::new(&p_ref, Span::call_site());
+                    let p_ref = Ident::new(p_ref, Span::call_site());
 
-                    if let Some(_) = parameter.optional {
+                    if parameter.optional.is_some() {
                         let v = quote! {
                             #[serde(skip_serializing_if="Option::is_none")]
                             #[serde(rename = #parameter_name)]
@@ -1288,20 +1270,21 @@ pub fn check_json(file_name: &str, commit: &str) -> Protocol {
 
         protocol
     } else {
-        let ureq_agent = {
-            let mut builder = ureq::AgentBuilder::new();
+        let ureq_config = {
+            // let mut builder = ureq::   AgentBuilder::new();
+            let mut config = ureq::config::Config::builder();
 
             // use HTTP proxy from environment variables if available
             if let Ok(addr) = env::var("https_proxy")
                 .or(env::var("http_proxy"))
                 .or(env::var("ALL_PROXY"))
             {
-                let proxy = ureq::Proxy::new(addr)
+                let proxy = ureq::Proxy::new(&addr)
                     .expect("Invalid proxy specified in environment variables");
-                builder = builder.proxy(proxy);
+                config = config.proxy(Some(proxy));
             }
 
-            builder.build()
+            config.build()
         };
 
         let url = format!(
@@ -1309,7 +1292,8 @@ pub fn check_json(file_name: &str, commit: &str) -> Protocol {
             commit, file_name
         );
 
-        let json = ureq_agent
+        let json = ureq_config
+            .new_agent()
             .get(&url)
             .call()
             .expect(
@@ -1317,8 +1301,9 @@ pub fn check_json(file_name: &str, commit: &str) -> Protocol {
                 Environment variables \"https_proxy\", \"http_proxy\", and \"ALL_PROXY\" are used \
                 in that order.",
             )
-            .into_string()
-            .expect("Received JSON is not valid UTF8");
+            .body_mut()
+            .read_to_string()
+            .expect("Failed to read response body");
 
         let protocol: Protocol = serde_json::from_str(&json).unwrap();
 
@@ -1349,7 +1334,7 @@ pub fn compile_cdp_json(file_name: &str, commit: &str) -> (Vec<TokenStream>, Vec
         if let Some(deps) = &dom.dependencies {
             for dep in deps
                 .iter()
-                .map(|v| Ident::new(&v.trim(), Span::call_site()))
+                .map(|v| Ident::new(v.trim(), Span::call_site()))
                 .collect::<Vec<Ident>>()
             {
                 dependencies.push(quote! {
@@ -1384,8 +1369,8 @@ pub fn compile_cdp_json(file_name: &str, commit: &str) -> (Vec<TokenStream>, Vec
 
         for command in &dom.commands {
             let mut cmd_name = command.name.clone();
-            let mut method_name = String::from(dom.domain.clone());
-            method_name.push_str(&format!(".{}", cmd_name));
+            let mut method_name = dom.domain.clone();
+            method_name.push_str(&format!(".{cmd_name}"));
             cmd_name.first_uppercase();
 
             let method_ident = Ident::new(&cmd_name, Span::call_site());
@@ -1414,7 +1399,7 @@ pub fn compile_cdp_json(file_name: &str, commit: &str) -> (Vec<TokenStream>, Vec
 
                 let mut domain_event = dom.domain.clone();
 
-                domain_event.push_str(&format!(".{}", event_name));
+                domain_event.push_str(&format!(".{event_name}"));
 
                 let domain_ident = Ident::new(&dom.domain.clone(), Span::call_site());
 

@@ -1,6 +1,5 @@
-extern crate serde_json;
-
 use serde::{Deserialize, Serialize};
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Protocol {
     #[serde(rename = "version")]

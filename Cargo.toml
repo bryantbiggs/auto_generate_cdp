@@ -14,12 +14,12 @@ exclude = [".vscode/*"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-convert_case = '0.4.0'
-proc-macro2 = '1.0.26'
-quote = '1.0.9'
-ureq = { version = "2.5", features = ["socks-proxy"] }
+convert_case = '0.8.0'
+proc-macro2 = '1.0.101'
+quote = '1.0.40'
+ureq = { version = "3.1", features = ["socks-proxy"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = '1.0.64'
+serde_json = '1.0.143'
 
 [lib]
 name = "auto_generate_cdp"
